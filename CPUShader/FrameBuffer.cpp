@@ -6,9 +6,25 @@
 #include <algorithm>
 #include <QGLWidget>
 #include <QDir>
+#include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
+#include <CGAL/Partition_traits_2.h>
+#include <CGAL/partition_2.h>
+#include <CGAL/point_generators_2.h>
+#include <CGAL/random_polygon_2.h>
+#include <CGAL/Polygon_2.h>
+#include <CGAL/create_offset_polygons_2.h>
 
 using namespace std;
 
+typedef CGAL::Exact_predicates_inexact_constructions_kernel K;
+typedef CGAL::Partition_traits_2<K>                         Traits;
+typedef Traits::Point_2                                     Point_2;
+typedef Traits::Polygon_2                                   Polygon_2;
+typedef Polygon_2::Vertex_iterator                          Vertex_iterator;
+typedef std::list<Polygon_2>                                Polygon_list;
+typedef CGAL::Creator_uniform_2<int, Point_2>               Creator;
+typedef CGAL::Random_points_in_square_2< Point_2, Creator > Point_generator;
+typedef boost::shared_ptr<Polygon_2>						PolygonPtr;
 
 AABB::AABB() {
 	corners[0][0] = (numeric_limits<float>::max)();
@@ -342,7 +358,11 @@ void FrameBuffer::rasterize(Camera* camera, const std::vector<std::vector<Vertex
 	}
 
 	for (auto it = sortedVertices.rbegin(); it != sortedVertices.rend(); ++it) {
-		rasterizePolygon(camera, it->second);
+		if (it->second.size() == 3) {
+			rasterizePolygon(camera, it->second);
+		} else {
+			rasterizeConcavePolygon(camera, it->second);
+		}
 	}
 }
 
@@ -351,7 +371,59 @@ void FrameBuffer::rasterize(Camera* camera, const std::vector<std::vector<Vertex
  */
 void FrameBuffer::rasterizePolygon(Camera* camera, const std::vector<Vertex>& vertices) {
 	for (int i = 1; i < vertices.size() - 1; ++i) {
-		rasterizeTriangle(camera, vertices[0], vertices[i], vertices[i + 1]);
+		rasterizeTriangle(camera, vertices[0].position, vertices[i].position, vertices[i + 1].position);
+	}
+
+	for (int i = 0; i < vertices.size(); ++i) {
+		int next = (i + 1) % vertices.size();
+
+		Draw3DStroke(camera, vertices[i].position, vertices[next].position);
+	}
+}
+
+void FrameBuffer::rasterizeConcavePolygon(Camera* camera, const std::vector<Vertex>& vertices) {
+	Polygon_2 polygon;
+	glm::vec3 prev_pp;
+	glm::vec3 first_pp;
+	for (int i = 0; i < vertices.size(); ++i) {
+		glm::vec3 pp;
+		camera->Project(vertices[i].position, pp);
+		pp = convertScreenCoordinate(pp);
+		
+		if (i == 0) {
+			first_pp = pp;
+		}
+
+		if (i > 0 && pp.x == prev_pp.x && pp.y == prev_pp.y) continue;
+		if (i > 0 && pp.x == first_pp.x && pp.y == first_pp.y) continue;
+
+		prev_pp = pp;
+		polygon.push_back(Point_2(pp.x, pp.y));
+	}
+	
+	if (polygon.size() > 4) {
+		// tesselate the concave polygon
+		Polygon_list partition_polys;
+		Traits       partition_traits;
+		if (polygon.is_clockwise_oriented()) {
+			polygon.reverse_orientation();
+		}
+		CGAL::greene_approx_convex_partition_2(polygon.vertices_begin(), polygon.vertices_end(), std::back_inserter(partition_polys), partition_traits);
+
+		for (auto fit = partition_polys.begin(); fit != partition_polys.end(); ++fit) {
+			std::vector<glm::vec2> pts;
+			for (auto vit = fit->vertices_begin(); vit != fit->vertices_end(); ++vit) {
+				pts.push_back(glm::vec2(vit->x(), vit->y()));
+			}
+
+			for (int i = 1; i < pts.size() - 1; ++i) {
+				rasterizeTriangle(glm::vec3(pts[0], 0), glm::vec3(pts[i], 0), glm::vec3(pts[i+1], 0));
+			}
+		}
+	} else {
+		for (int i = 1; i < vertices.size() - 1; ++i) {
+			rasterizeTriangle(camera, vertices[0].position, vertices[i].position, vertices[i + 1].position);
+		}
 	}
 
 	for (int i = 0; i < vertices.size(); ++i) {
@@ -364,26 +436,30 @@ void FrameBuffer::rasterizePolygon(Camera* camera, const std::vector<Vertex>& ve
 /**
  * １つの三角形の領域を、背景色で塗りつぶす。
  */
-void FrameBuffer::rasterizeTriangle(Camera* camera, const Vertex& p0, const Vertex& p1, const Vertex& p2) {
-	AABB box;
-
+void FrameBuffer::rasterizeTriangle(Camera* camera, const glm::vec3& p0, const glm::vec3& p1, const glm::vec3& p2) {
 	// if the area is too small, skip this triangle.
-	if (glm::length(glm::cross(p1.position - p0.position, p2.position - p0.position)) < 1e-7) return;
+	if (glm::length(glm::cross(p1 - p0, p2 - p0)) < 1e-7) return;
 
 	bool isFront = false;
 	glm::vec3 pp0, pp1, pp2;
-	if (!camera->Project(p0.position, pp0)) return;
-	if (!camera->Project(p1.position, pp1)) return;
-	if (!camera->Project(p2.position, pp2)) return;
+	if (!camera->Project(p0, pp0)) return;
+	if (!camera->Project(p1, pp1)) return;
+	if (!camera->Project(p2, pp2)) return;
 
 	pp0 = convertScreenCoordinate(pp0);
 	pp1 = convertScreenCoordinate(pp1);
 	pp2 = convertScreenCoordinate(pp2);
 
+	rasterizeTriangle(pp0, pp1, pp2);
+}
+
+void FrameBuffer::rasterizeTriangle(const glm::vec3& p0, const glm::vec3& p1, const glm::vec3& p2) {
+	AABB box;
+
 	// compute the bounding box
-	box.AddPoint(pp0);
-	box.AddPoint(pp1);
-	box.AddPoint(pp2);
+	box.AddPoint(p0);
+	box.AddPoint(p1);
+	box.AddPoint(p2);
 
 	// the bounding box should be inside the screen
 	int u_min = (int)(box.minCorner().x + 0.5f);
@@ -395,29 +471,29 @@ void FrameBuffer::rasterizeTriangle(Camera* camera, const Vertex& p0, const Vert
 	int v_max = (int)(box.maxCorner().y - 0.5f);
 	if (v_max >= h) v_max = h - 1;
 
-	float denom = (pp1.y - pp0.y) * (pp2.x - pp0.x) - (pp1.x - pp0.x) * (pp2.y - pp0.y);
+	float denom = (p1.y - p0.y) * (p2.x - p0.x) - (p1.x - p0.x) * (p2.y - p0.y);
 
 	for (int u = u_min; u <= u_max; u++) {
 		for (int v = v_min; v <= v_max; v++) {
-			glm::vec3 pp(u + 0.5f, v + 0.5f, 0.0f);
+			glm::vec3 p(u + 0.5f, v + 0.5f, 0.0f);
 			
-			float s = ((pp2.x - pp0.x) * (pp.y - pp0.y) - (pp2.y - pp0.y) * (pp.x - pp0.x)) / denom;
-			float t = ((pp1.y - pp0.y) * (pp.x - pp0.x) - (pp1.x - pp0.x) * (pp.y - pp0.y)) / denom;
+			float s = ((p2.x - p0.x) * (p.y - p0.y) - (p2.y - p0.y) * (p.x - p0.x)) / denom;
+			float t = ((p1.y - p0.y) * (p.x - p0.x) - (p1.x - p0.x) * (p.y - p0.y)) / denom;
 
 			// if the point is outside the triangle, skip it.
 			if (s < 0 || s > 1 || t < 0 || t > 1 || s + t > 1) continue;
 
 			// interpolate in screen space
-			pp.z = pp0.z * (1.0f - s - t) + pp1.z * s + pp2.z * t;
+			p.z = p0.z * (1.0f - s - t) + p1.z * s + p2.z * t;
 
 			// if the point is behind the camera, skip this pixel.
-			if (pp.z <= 0) continue;
+			if (p.z < 0) continue;
 			
 			// check if the point is occluded by other triangles.
-			//if (zb[(h-1-v)*w+u] <= pp.z) continue;
+			//if (zb[(h-1-v)*w+u] <= p.z) continue;
 
 			// set bg color
-			Set(u, v, clear_color, pp.z);
+			Set(u, v, clear_color, p.z);
 		}
 	}
 }

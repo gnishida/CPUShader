@@ -70,7 +70,9 @@ public:
 
 	void rasterize(Camera* camera, const std::vector<std::vector<Vertex> >& vertices);
 	void rasterizePolygon(Camera* camera, const std::vector<Vertex>& vertices);
-	void rasterizeTriangle(Camera* camera, const Vertex& p0, const Vertex& p1, const Vertex& p2);
+	void rasterizeConcavePolygon(Camera* camera, const std::vector<Vertex>& vertices);
+	void rasterizeTriangle(Camera* camera, const glm::vec3& p0, const glm::vec3& p1, const glm::vec3& p2);
+	void rasterizeTriangle(const glm::vec3& p0, const glm::vec3& p1, const glm::vec3& p2);
 
 	float maxDepth(Camera* camera, const std::vector<Vertex>& vertices);
 
