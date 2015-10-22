@@ -29,7 +29,7 @@ public:
 
 public:
 	Stroke(const std::string& filename);
-	glm::vec3 getColor(int x, int y) const;
+	glm::vec3 getColor(float x, float y) const;
 };
 
 class FrameBuffer {

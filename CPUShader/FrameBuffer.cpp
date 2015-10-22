@@ -62,7 +62,7 @@ Stroke::Stroke(const std::string& filename) {
 	stroke_image = cv::imread(filename.c_str());
 }
 
-glm::vec3 Stroke::getColor(int x, int y) const {
+glm::vec3 Stroke::getColor(float x, float y) const {
 	// return white color if the pixel is outside the stroke image
 	if (x < 0 || x >= stroke_image.cols || y < 0 || y >= stroke_image.rows) return glm::vec3(1, 1, 1);
 
@@ -209,13 +209,14 @@ void FrameBuffer::Draw3DSegment(Camera* camera, const glm::vec3& p0, const glm::
  */
 void FrameBuffer::Draw2DStroke(const glm::vec3& p0, const glm::vec3& p1, const Stroke& stroke) {
 	float theta = -atan2(p1.y - p0.y, p1.x - p0.x);
-	float scale = 152.0f / glm::length(p1 - p0);
+	float scale_x = 152.0f / glm::length(p1 - p0);
+	float scale_y = 1.0f;//max(1.0f, scale_x);
 
 	cv::Mat_<float> R(2, 2);
-	R(0, 0) = scale * cosf(theta);
-	R(0, 1) = -scale * sinf(theta);
-	R(1, 0) = scale * sinf(theta);
-	R(1, 1) = scale * cosf(theta);
+	R(0, 0) = scale_x * cosf(theta);
+	R(0, 1) = -scale_x * sinf(theta);
+	R(1, 0) = scale_y * sinf(theta);
+	R(1, 1) = scale_y * cosf(theta);
 
 	AABB box;
 	box.AddPoint(p0);
@@ -223,16 +224,16 @@ void FrameBuffer::Draw2DStroke(const glm::vec3& p0, const glm::vec3& p1, const S
 
 	// the bounding box should be inside the screen
 	int u_min = (int)(box.minCorner().x + 0.5f);
-	u_min -= 20 * scale;
+	u_min -= 20 * max(scale_x, scale_y);
 	if (u_min < 0) u_min = 0;;
 	int u_max = (int)(box.maxCorner().x - 0.5f);
-	u_max += 20 * scale;
+	u_max += 20 * max(scale_x, scale_y);
 	if (u_max >= w) u_max = w - 1;
 	int v_min = (int)(box.minCorner().y + 0.5f);
-	v_min -= 20 * scale;
+	v_min -= 20 * max(scale_x, scale_y);
 	if (v_min < 0) v_min = 0;
 	int v_max = (int)(box.maxCorner().y - 0.5f);
-	v_max += 20 * scale;
+	v_max += 20 * max(scale_x, scale_y);
 	if (v_max >= h) v_max = h - 1;
 
 	for (int u = u_min; u <= u_max; u++) {
