@@ -55,6 +55,7 @@ public:
 	~FrameBuffer();
 
 	void resize(int _w, int _h);
+	void loadStrokes(const std::string& dirname);
 	void draw();
 
 	void setClearColor(const glm::vec3& clear_color);

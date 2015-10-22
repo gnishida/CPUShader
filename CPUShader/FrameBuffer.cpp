@@ -78,18 +78,6 @@ FrameBuffer::FrameBuffer(int _w, int _h) {
 	h = _h;
 	pix = new unsigned int[w*h];
 	zb  = new float[w*h];
-
-	// load strokes
-	{
-		QDir dir("../strokes/");
-
-		QStringList filters;
-		filters << "*.png";
-		QFileInfoList fileInfoList = dir.entryInfoList(filters, QDir::Files|QDir::NoDotAndDotDot);
-		for (int i = 0; i < fileInfoList.size(); ++i) {
-			strokes.push_back(Stroke(fileInfoList[i].absoluteFilePath().toUtf8().constData()));
-		}
-	}
 }
 
 FrameBuffer::~FrameBuffer() {
@@ -105,6 +93,17 @@ void FrameBuffer::resize(int _w, int _h) {
 	h = _h;
 	pix = new unsigned int[w*h];
 	zb  = new float[w*h];
+}
+
+void FrameBuffer::loadStrokes(const std::string& dirname) {
+	QDir dir(dirname.c_str());
+
+	QStringList filters;
+	filters << "*.png";
+	QFileInfoList fileInfoList = dir.entryInfoList(filters, QDir::Files|QDir::NoDotAndDotDot);
+	for (int i = 0; i < fileInfoList.size(); ++i) {
+		strokes.push_back(Stroke(fileInfoList[i].absoluteFilePath().toUtf8().constData()));
+	}
 }
 
 void FrameBuffer::draw() {
@@ -247,12 +246,11 @@ void FrameBuffer::Draw2DStroke(const glm::vec3& p0, const glm::vec3& p1, const S
 			A(1, 0) = 20;
 
 			cv::Mat_<float> T = R * X + A;
-			//std::cout << T(0, 0) << "," << T(1, 0) << std::endl;
 
 			glm::vec3 color = stroke.getColor(T(0, 0), T(1, 0));
+			//std::cout << color.x << "," << color.y << "," << color.z << std::endl;
 			
 			Add(u, v, color);
-			//SetGuarded(u, v, color, 0);
 		}
 	}
 }

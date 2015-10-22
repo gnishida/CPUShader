@@ -59,6 +59,7 @@ void GLWidget3D::initializeGL() {
 	*/
 
 	fb = new FrameBuffer(width(), height());
+	fb->loadStrokes("..\\strokes");
 }
 
 /**
@@ -89,8 +90,6 @@ void GLWidget3D::paintGL() {
 	fb->setClearColor(glm::vec3(1, 1, 1));
 	fb->clear();
 
-	//fb->Draw3DSegment(&camera, glm::vec3(0, 0, 0), glm::vec3(0, 0, 0), glm::vec3(1, 1, 0), glm::vec3(0, 0, 0));
-
 	std::vector<std::vector<Vertex> > vertices;
 	/*
 	vertices.resize(2);
@@ -104,7 +103,7 @@ void GLWidget3D::paintGL() {
 	fb->rasterize(&camera, vertices);
 
 	//fb->Draw2DSegment(glm::vec3(100, 100, 0), glm::vec3(1, 0, 1), glm::vec3(200, 100, 0), glm::vec3(1, 0, 1));
-	//fb->Draw2DStroke(glm::vec3(100, 100, 0), glm::vec3(0, 0, 0), glm::vec3(200, 200, 0), glm::vec3(0, 0, 0));
+	//fb->Draw2DStroke(glm::vec3(100, 100, 0), glm::vec3(200, 200, 0), fb->strokes[0]);
 
 	fb->draw();
 }
