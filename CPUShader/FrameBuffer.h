@@ -1,17 +1,27 @@
 #pragma once
 
-#include <FL/Fl.H>
-#include <FL/Fl_Gl_Window.H>
-#include <GL/glut.h>
-#include "V3.h"
-#include "M33.h"
-#include "TMesh.h"
-#include "PPC.h"
-#include "Texture.h"
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtx/string_cast.hpp>
+#include "Camera.h"
+#include "Vertex.h"
+#include <vector>
 
-// framebuffer + window class
+// axis aligned bounding box class
+class AABB {
+private:
+	glm::vec3 corners[2];
 
-class FrameBuffer : public Fl_Gl_Window {
+public:
+	AABB();
+	AABB(const glm::vec3& p);
+	void AddPoint(const glm::vec3& p);
+	const glm::vec3& minCorner() const;
+	const glm::vec3& maxCorner() const;
+	glm::vec3 Size() const;
+};
+
+class FrameBuffer {
 public:
 	/** software color buffer (The first pixel is the bottom left corner.) */
 	unsigned int *pix;
@@ -25,43 +35,34 @@ public:
 	/** image height resolution */
 	int h;
 
-	/** the last position of the mouse pointer */
-	V3 lastPosition;
+	glm::vec3 clear_color;
 
 public:
-	FrameBuffer(int u0, int v0, int _w, int _h); // constructor, top left coords and resolution
+	FrameBuffer(int _w, int _h);
 	~FrameBuffer();
 
-	// function that is always called back by system and never called directly by programmer
-	// programmer triggers framebuffer update by calling FrameBuffer::redraw(), which makes
-	//            system call draw
 	void draw();
 
-	// function called back when event occurs (mouse, keyboard, etc)
-	int handle(int event);
-	void KeyboardHandle();
-	void mousePushHandle();
-	void mouseMoveHandle();
-
-	void Set(unsigned int bgr);
-	void Set(int u, int v, unsigned int clr);
-	void Set(int u, int v, unsigned int clr, float z);
-	void SetGuarded(int u, int v, unsigned int clr, float z);
-	void SetZB(float z0);
-	void Draw2DSegment(const V3 &p0, const V3 &c0, const V3 &p1, const V3 &c1);
-	void Draw3DSegment(PPC* ppc, const V3 &p0, const V3 &c0, const V3 &p1, const V3 &c1);
-	void DrawRectangle(const V3 &p0, const V3 &p1, const V3 &c);
-	void DrawPPCFrustum(PPC* ppc, PPC* frustum);
-	bool Load(char* filename);
-	bool Save(char* filename);
-
-	void Draw2DBigPoint(int u, int v, int psize, const V3 &color, float z);
-	void Draw3DBigPoint(PPC* ppc, const V3 &p, int psize, const V3 &color);
+	void setClearColor(const glm::vec3& clear_color);
+	void clear();
+	void Set(int u, int v, const glm::vec3& clr);
+	void Set(int u, int v, const glm::vec3& clr, float z);
+	void SetGuarded(int u, int v, const glm::vec3& clr, float z);
+	void Draw2DSegment(const glm::vec3& p0, const glm::vec3& c0, const glm::vec3& p1, const glm::vec3& c1);
+	void Draw3DSegment(Camera* camera, const glm::vec3& p0, const glm::vec3& c0, const glm::vec3& p1, const glm::vec3& c1);
+	void Draw2DStroke(const glm::vec3& p0, const glm::vec3& c0, const glm::vec3& p1, const glm::vec3& c1);
+	void Draw3DStroke(Camera* camera, const glm::vec3& p0, const glm::vec3& c0, const glm::vec3& p1, const glm::vec3& c1);
 
 	bool isHidden(int u, int v, float z);
 
-	void rasterize(PPC* ppc, const M33 &camMat, const Vertex &p0, const Vertex &p1, const Vertex &p2);
-	void rasterizeWithTexture(PPC* ppc, const M33 &camMat, const Vertex &p0, const Vertex &p1, const Vertex &p2, Texture* texture);
+	void rasterize(Camera* camera, const std::vector<std::vector<Vertex> >& vertices);
+	void rasterize(Camera* camera, const std::vector<Vertex>& vertices);
+	void rasterize(Camera* camera, const Vertex& p0, const Vertex& p1, const Vertex& p2);
+
+	float maxDepth(Camera* camera, const std::vector<Vertex>& vertices);
+
+	unsigned int GetColor(const glm::vec3& clr) const;
+	glm::vec3 convertScreenCoordinate(const glm::vec3& p) const;
 };
 
 

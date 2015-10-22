@@ -1,17 +1,66 @@
-#include "framebuffer.h"
-#include <libtiff/tiffio.h>
+﻿#include "framebuffer.h"
+//#include <libtiff/tiffio.h>
 #include <iostream>
-#include "scene.h"
+//#include "scene.h"
 #include <math.h>
 #include <algorithm>
+#include <QGLWidget>
 
 using namespace std;
 
-extern int rasterization_mode;
+
+AABB::AABB() {
+	corners[0][0] = (numeric_limits<float>::max)();
+	corners[0][1] = (numeric_limits<float>::max)();
+	corners[0][2] = (numeric_limits<float>::max)();
+
+	corners[1][0] = -(numeric_limits<float>::max)();
+	corners[1][1] = -(numeric_limits<float>::max)();
+	corners[1][2] = -(numeric_limits<float>::max)();
+}
+
+AABB::AABB(const glm::vec3& p) {
+	corners[0] = corners[1] = p;
+}
+
+void AABB::AddPoint(const glm::vec3& p) {
+	if (p.x < corners[0].x) {
+		corners[0][0] = p.x;
+	}
+	if (p.y < corners[0].y) {
+		corners[0][1] = p.y;
+	}
+	if (p.z < corners[0].z) {
+		corners[0][2] = p.z;
+	}
+
+	if (p.x > corners[1].x) {
+		corners[1][0] = p.x;
+	}
+	if (p.y > corners[1].y) {
+		corners[1][1] = p.y;
+	}
+	if (p.z > corners[1].z) {
+		corners[1][2] = p.z;
+	}
+}
+
+const glm::vec3& AABB::minCorner() const {
+	return corners[0];
+}
+
+const glm::vec3& AABB::maxCorner() const {
+	return corners[1];
+}
+
+glm::vec3 AABB::Size() const {
+	return corners[1] - corners[0];
+}
+
 
 // makes an OpenGL window that supports SW, HW rendering, that can be displayed on screen
 //        and that receives UI events, i.e. keyboard, mouse, etc.
-FrameBuffer::FrameBuffer(int u0, int v0, int _w, int _h) : Fl_Gl_Window(u0, v0, _w, _h, 0) {
+FrameBuffer::FrameBuffer(int _w, int _h) {
 	w = _w;
 	h = _h;
 	pix = new unsigned int[w*h];
@@ -20,6 +69,7 @@ FrameBuffer::FrameBuffer(int u0, int v0, int _w, int _h) : Fl_Gl_Window(u0, v0, 
 
 FrameBuffer::~FrameBuffer() {
 	delete [] pix;
+	delete [] zb;
 }
 
 // rendering callback; see header file comment
@@ -28,75 +78,8 @@ void FrameBuffer::draw() {
 	glDrawPixels(w, h, GL_RGBA, GL_UNSIGNED_BYTE, pix);
 }
 
-// function called automatically on event within window (callback)
-int FrameBuffer::handle(int event)  {  
-	switch(event) {   
-	case FL_KEYBOARD:
-		KeyboardHandle();
-	case FL_PUSH:
-		mousePushHandle();
-	case FL_DRAG:
-		mouseMoveHandle();
-	default:
-		break;
-	}
-
-	return 0;
-}
-
-void FrameBuffer::KeyboardHandle() {
-	int key = Fl::event_key();
-
-	switch (key) {
-	case FL_Left:
-		scene->currentPPC->TranslateLR(-1.0f);
-		scene->Render();
-		break;
-	case FL_Right:
-		scene->currentPPC->TranslateLR(1.0f);
-		scene->Render();
-		break;
-	case FL_Up:
-		scene->currentPPC->TranslateUD(1.0f);
-		scene->Render();
-		break;
-	case FL_Down:
-		scene->currentPPC->TranslateUD(-1.0f);
-		scene->Render();
-		break;
-    case 'a':
-		cerr << "pressed a" << endl;
-		break;
-	default:
-		cerr << "INFO: do not understand keypress" << endl;
-	}
-}
-
-void FrameBuffer::mousePushHandle() {
-	make_current();
-	lastPosition = V3(Fl::event_x(), Fl::event_y(), 0.0f);
-}
-
-void FrameBuffer::mouseMoveHandle() {
-	if (Fl::event_state(FL_BUTTON1)) {
-		float dx = Fl::event_x() - lastPosition.x();
-		float dy = Fl::event_y() - lastPosition.y();
-
-		scene->currentPPC->RotateAbout(scene->currentPPC->b, dx * 1.0f, V3(0.0f, 0.0f, 0.0f));
-		scene->currentPPC->RotateAbout(scene->currentPPC->a, -dy * 1.0f, V3(0.0f, 0.0f, 0.0f));
-	} else if (Fl::event_state(FL_BUTTON2)) {
-		float dx = Fl::event_x() - lastPosition.x();
-		float dy = Fl::event_y() - lastPosition.y();
-
-		scene->currentPPC->TranslateLR(-dx);
-		scene->currentPPC->TranslateUD(dy);
-	} else if (Fl::event_state(FL_BUTTON3)) {
-		float dy = Fl::event_y() - lastPosition.y();
-		scene->currentPPC->TranslateFB(dy * 1.0f);
-	}
-
-	lastPosition = V3(Fl::event_x(), Fl::event_y(), 0.0f);
-	scene->Render();
+void FrameBuffer::setClearColor(const glm::vec3& clear_color) {
+	this->clear_color = clear_color;
 }
 
 /**
@@ -104,9 +87,11 @@ void FrameBuffer::mouseMoveHandle() {
  *
  * @param bgr	the given color
  */
-void FrameBuffer::Set(unsigned int bgr) {
+void FrameBuffer::clear() {
+	unsigned int clr = GetColor(clear_color);
 	for (int uv = 0; uv < w*h; uv++) {
-		pix[uv] = bgr;
+		pix[uv] = clr;
+		zb[uv] = 100.0f;
 	}
 }
 
@@ -118,8 +103,8 @@ void FrameBuffer::Set(unsigned int bgr) {
  * @param v		y coordinate of the pixel
  * @param clr	the color
  */
-void FrameBuffer::Set(int u, int v, unsigned int clr) {
-	pix[(h-1-v)*w+u] = clr;
+void FrameBuffer::Set(int u, int v, const glm::vec3& clr) {
+	pix[(h-1-v)*w+u] = GetColor(clr);
 }
 
 /**
@@ -131,10 +116,10 @@ void FrameBuffer::Set(int u, int v, unsigned int clr) {
  * @param clr	the color
  * @param z		z buffer
  */
-void FrameBuffer::Set(int u, int v, unsigned int clr, float z) {
-	if (zb[(h-1-v)*w+u] >= z) return;
+void FrameBuffer::Set(int u, int v, const glm::vec3& clr, float z) {
+	//if (zb[(h-1-v)*w+u] <= z) return;
 
-	pix[(h-1-v)*w+u] = clr;
+	pix[(h-1-v)*w+u] = GetColor(clr);
 	zb[(h-1-v)*w+u] = z;
 }
 
@@ -146,18 +131,20 @@ void FrameBuffer::Set(int u, int v, unsigned int clr, float z) {
  * @param v		y coordinate of the pixel
  * @param clr	the color
  */
-void FrameBuffer::SetGuarded(int u, int v, unsigned int clr, float z) {
+void FrameBuffer::SetGuarded(int u, int v, const glm::vec3& clr, float z) {
 	if (u < 0 || u > w-1 || v < 0 || v > h-1) return;
 
 	Set(u, v, clr, z);
 }
 
 // set all z values in SW ZB to z0
+/*
 void FrameBuffer::SetZB(float z0) {
 	for (int i = 0; i < w*h; i++) {
 		zb[i] = z0;
 	}
 }
+*/
 
 /**
  * Draw 2D segment with color interpolation.
@@ -167,9 +154,9 @@ void FrameBuffer::SetZB(float z0) {
  * @param p1	the second point of the segment
  * @param c1	the color of the second point
  */
-void FrameBuffer::Draw2DSegment(const V3 &p0, const V3 &c0, const V3 &p1, const V3 &c1) {
-	float dx = fabsf(p0.x() - p1.x());
-	float dy = fabsf(p0.y() - p1.y());
+void FrameBuffer::Draw2DSegment(const glm::vec3& p0, const glm::vec3& c0, const glm::vec3& p1, const glm::vec3& c1) {
+	float dx = fabsf(p0.x - p1.x);
+	float dy = fabsf(p0.y - p1.y);
 
 	int n;
 	if (dx < dy) {
@@ -180,11 +167,11 @@ void FrameBuffer::Draw2DSegment(const V3 &p0, const V3 &c0, const V3 &p1, const 
 
 	for (int i = 0; i <= n; i++) {
 		float frac = (float) i / (float)n;
-		V3 curr = p0 + (p1-p0) * frac;
-		V3 currc = c0 + (c1-c0) * frac;
+		glm::vec3 curr = p0 + (p1-p0) * frac;
+		glm::vec3 currc = c0 + (c1-c0) * frac;
 		int u = (int)curr[0];
 		int v = (int)curr[1];
-		SetGuarded(u, v, currc.GetColor(), curr[2]);
+		SetGuarded(u, v, currc, curr.z);
 	}
 }
 
@@ -197,118 +184,88 @@ void FrameBuffer::Draw2DSegment(const V3 &p0, const V3 &c0, const V3 &p1, const 
  * @param p1	the second point of the segment
  * @param c1	the color of the second point
  */
-void FrameBuffer::Draw3DSegment(PPC* ppc, const V3 &p0, const V3 &c0, const V3 &p1, const V3 &c1) {
-	V3 pp0, pp1;
-	if (!ppc->Project(p0, pp0)) return;
-	if (!ppc->Project(p1, pp1)) return;
+void FrameBuffer::Draw3DSegment(Camera* camera, const glm::vec3& p0, const glm::vec3& c0, const glm::vec3& p1, const glm::vec3& c1) {
+	glm::vec3 pp0, pp1;
+	if (!camera->Project(p0, pp0)) return;
+	if (!camera->Project(p1, pp1)) return;
+
+	pp0 = convertScreenCoordinate(pp0);
+	pp1 = convertScreenCoordinate(pp1);
 
 	Draw2DSegment(pp0, c0, pp1, c1);
 }
 
 /**
- * Draw axis aligned rectangle.
+ * Draw 2D segment with color interpolation.
  *
- * @param p0	the top left corner of the rectangle
- * @param p1	the bottom right corner of the rectangle
- * @param c		the color
+ * @param p0	the first point of the segment
+ * @param c0	the color of the first point
+ * @param p1	the second point of the segment
+ * @param c1	the color of the second point
  */
-void FrameBuffer::DrawRectangle(const V3 &p0, const V3 &p1, const V3 &c) {
-	V3 p2(p0.x(), p1.y(), 0.0f);
-	V3 p3(p1.x(), p0.y(), 0.0f);
+void FrameBuffer::Draw2DStroke(const glm::vec3& p0, const glm::vec3& c0, const glm::vec3& p1, const glm::vec3& c1) {
+	float dx = fabsf(p0.x - p1.x);
+	float dy = fabsf(p0.y - p1.y);
 
-	Draw2DSegment(p0, c, p2, c);
-	Draw2DSegment(p2, c, p1, c);
-	Draw2DSegment(p1, c, p3, c);
-	Draw2DSegment(p3, c, p0, c);
-}
-
-/**
- * Draw a frustum of the specified camera.
- *
- * @param ppc		the current camera
- * @param frustum	tthe camera to be drawn
- */
-void FrameBuffer::DrawPPCFrustum(PPC* ppc, PPC* frustum) {
-	//fDrawPPCFrustum(
-}
-
-/**
- * Load the frame buffer from the specified tiff file.
- *
- * @param filename		the tiff file name
- * @return				true if the load successes; false otherwise
- */
-bool FrameBuffer::Load(char* filename) {
-	TIFF* tiff = TIFFOpen(filename, "r");
-	if (tiff == NULL) return false;
-
-	int w2, h2;
-	TIFFGetField(tiff, TIFFTAG_IMAGEWIDTH, &w2);
-	TIFFGetField(tiff, TIFFTAG_IMAGELENGTH, &h2);
-
-	pix = (unsigned int*)_TIFFmalloc(sizeof(unsigned int) * w2 * h2);
-	if (!TIFFReadRGBAImage(tiff, w, h, pix, 0)) {
-		delete [] pix;
-		pix = new unsigned int[w*h];
-		TIFFClose(tiff);
-		return false;
+	int n;
+	if (dx < dy) {
+		n = 1 + (int)dy;
+	} else {
+		n = 1 + (int)dx;
 	}
 
-	w = w2;
-	h = h2;
-	TIFFClose(tiff);
-
-	return true;
+	for (int i = 0; i <= n; i++) {
+		float frac = (float) i / (float)n;
+		glm::vec3 curr = p0 + (p1-p0) * frac;
+		glm::vec3 currc = c0 + (c1-c0) * frac;
+		int u = (int)curr[0];
+		int v = (int)curr[1];
+		SetGuarded(u, v, currc, curr.z);
+	}
 }
 
 /**
- * Save the frame buffer to a tiff file.
+ * Draw 3D segment with color interpolation.
  *
- * @param filename		the file name to store the frame buffer
- * @return				true if the save successes; false otherwise
+ * @param ppc	the camera
+ * @param p0	the first point of the segment
+ * @param c0	the color of the first point
+ * @param p1	the second point of the segment
+ * @param c1	the color of the second point
  */
-bool FrameBuffer::Save(char* filename) {
-	unsigned int *temp = new unsigned int[w * h];
-	for (int v = 0; v < h; v++) {
-		for (int u = 0; u < w; u++) {
-			temp[v * w + u] = pix[(h - 1 - v) * w + u];
+void FrameBuffer::Draw3DStroke(Camera* camera, const glm::vec3& p0, const glm::vec3& c0, const glm::vec3& p1, const glm::vec3& c1) {
+	glm::vec3 q0 = p0;
+	glm::vec3 q1 = p1;
+
+	if (q0.x > q1.x) {
+		swap(q0, q1);
+	} else if (q0.x == q1.x) {
+		if (q0.y > q1.y) {
+			swap(q0, q1);
+		} else if (q0.y == q1.y) {
+			if (q0.z > q1.z) {
+				swap(q0, q1);
+			}
 		}
 	}
 
-	TIFF* tiff = TIFFOpen(filename, "w");
-	if (tiff == NULL) return false;
+	glm::vec3 pp0, pp1;
+	if (!camera->Project(q0, pp0)) return;
+	if (!camera->Project(q1, pp1)) return;
 
-	TIFFSetField(tiff, TIFFTAG_IMAGEWIDTH, w);
-	TIFFSetField(tiff, TIFFTAG_IMAGELENGTH, h);
-	TIFFSetField(tiff, TIFFTAG_SAMPLESPERPIXEL, sizeof(unsigned int));
-	TIFFSetField(tiff, TIFFTAG_BITSPERSAMPLE, 8);
-	//TIFFSetField(tiff, TIFFTAG_ORIENTATION, ORIENTATION_BOTLEFT);
-	TIFFSetField(tiff, TIFFTAG_ORIENTATION, ORIENTATION_TOPLEFT);
-	TIFFSetField(tiff, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
-	TIFFSetField(tiff, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_RGB);
+	pp0 = convertScreenCoordinate(pp0);
+	pp1 = convertScreenCoordinate(pp1);
 
-	TIFFWriteEncodedStrip(tiff, 0, temp, w * h * sizeof(unsigned int));
+	srand(q0.x * 100 + q0.y * 50 + q0.z * 10 + q1.x * 20 + q1.y * 30 + q1.z * 40);
 
-	TIFFClose(tiff);
-
-	delete [] temp;
-
-	return true;
-}
-
-void FrameBuffer::Draw2DBigPoint(int u0, int v0, int psize, const V3 &color, float z) {
-	for (int v = v0-psize/2; v <= v0+psize/2; v++) {
-		for (int u = u0-psize/2; u <= u0+psize/2; u++) {
-			SetGuarded(u, v, color.GetColor(), z);
-		}
+	glm::vec3 offset = pp0 - pp1;
+	offset *= 0.01;
+	for (int i = 0; i < 2; ++i) {
+		pp0[i] += ((float)rand() / RAND_MAX - 0.5) * 5 + offset[i];
+		pp1[i] += ((float)rand() / RAND_MAX - 0.5) * 5 - offset[i];
 	}
-}
 
-void FrameBuffer::Draw3DBigPoint(PPC* ppc, const V3 &p, int psize, const V3 &color) {
-	V3 pp;
-	if (!ppc->Project(p, pp)) return;
-
-	Draw2DBigPoint(pp.x(), pp.y(), psize, color, pp.z());
+	Draw2DStroke(pp0, c0, pp1, c1);
 }
 
 bool FrameBuffer::isHidden(int u, int v, float z) {
@@ -316,17 +273,57 @@ bool FrameBuffer::isHidden(int u, int v, float z) {
 	else return false;
 }
 
-void FrameBuffer::rasterize(PPC* ppc, const M33 &camMat, const Vertex &p0, const Vertex &p1, const Vertex &p2) {
+/**
+ * objectを描画する。
+ */
+void FrameBuffer::rasterize(Camera* camera, const std::vector<std::vector<Vertex> >& vertices) {
+	std::multimap<float, std::vector<Vertex> > sortedVertices;
+
+	for (int i = 0; i < vertices.size(); ++i) {
+		float depth = maxDepth(camera, vertices[i]);
+
+		sortedVertices.insert(std::make_pair(depth, vertices[i]));
+	}
+
+	for (auto it = sortedVertices.rbegin(); it != sortedVertices.rend(); ++it) {
+		rasterize(camera, it->second);
+	}
+}
+
+/**
+ * １つのfaceを描画する。
+ */
+void FrameBuffer::rasterize(Camera* camera, const std::vector<Vertex>& vertices) {
+	for (int i = 1; i < vertices.size() - 1; ++i) {
+		rasterize(camera, vertices[0], vertices[i], vertices[i + 1]);
+	}
+
+	for (int i = 0; i < vertices.size(); ++i) {
+		int next = (i + 1) % vertices.size();
+
+		//Draw3DSegment(camera, vertices[i].position, glm::vec3(0, 0, 0), vertices[next].position, glm::vec3(0, 0, 0));
+		Draw3DStroke(camera, vertices[i].position, glm::vec3(0, 0, 0), vertices[next].position, glm::vec3(0, 0, 0));
+	}
+}
+
+/**
+ * １つの三角形の描画する。
+ */
+void FrameBuffer::rasterize(Camera* camera, const Vertex& p0, const Vertex& p1, const Vertex& p2) {
 	AABB box;
 
 	// if the area is too small, skip this triangle.
-	if (((p1.v - p0.v) ^ (p2.v - p0.v)).Length() < 1e-7) return;
+	if (glm::length(glm::cross(p1.position - p0.position, p2.position - p0.position)) < 1e-7) return;
 
 	bool isFront = false;
-	V3 pp0, pp1, pp2;
-	if (!ppc->Project(p0.v, pp0)) return;
-	if (!ppc->Project(p1.v, pp1)) return;
-	if (!ppc->Project(p2.v, pp2)) return;
+	glm::vec3 pp0, pp1, pp2;
+	if (!camera->Project(p0.position, pp0)) return;
+	if (!camera->Project(p1.position, pp1)) return;
+	if (!camera->Project(p2.position, pp2)) return;
+
+	pp0 = convertScreenCoordinate(pp0);
+	pp1 = convertScreenCoordinate(pp1);
+	pp2 = convertScreenCoordinate(pp2);
 
 	// compute the bounding box
 	box.AddPoint(pp0);
@@ -334,188 +331,79 @@ void FrameBuffer::rasterize(PPC* ppc, const M33 &camMat, const Vertex &p0, const
 	box.AddPoint(pp2);
 
 	// the bounding box should be inside the screen
-	int u_min = (int)(box.minCorner().x() + 0.5f);
+	int u_min = (int)(box.minCorner().x + 0.5f);
 	if (u_min < 0) u_min = 0;;
-	int u_max = (int)(box.maxCorner().x() - 0.5f);
+	int u_max = (int)(box.maxCorner().x - 0.5f);
 	if (u_max >= w) u_max = w - 1;
-	int v_min = (int)(box.minCorner().y() + 0.5f);
+	int v_min = (int)(box.minCorner().y + 0.5f);
 	if (v_min < 0) v_min = 0;
-	int v_max = (int)(box.maxCorner().y() - 0.5f);
+	int v_max = (int)(box.maxCorner().y - 0.5f);
 	if (v_max >= h) v_max = h - 1;
 
-	// setup some variables
-	float denom = ((pp1 - pp0) ^ (pp2 - pp0)).z();
-	M33 Q;
-	Q.SetColumn(0, p0.v - ppc->C);
-	Q.SetColumn(1, p1.v - ppc->C);
-	Q.SetColumn(2, p2.v - ppc->C);
-	Q = Q.Inverted() * camMat;
-
-	// vertex colors that will be used only for Gouraud shading
-	V3 c0 = scene->light->GetColor(ppc, p0.v, p0.c, p0.n);
-	V3 c1 = scene->light->GetColor(ppc, p1.v, p1.c, p1.n);
-	V3 c2 = scene->light->GetColor(ppc, p2.v, p2.c, p2.n);
+	float denom = (pp1.y - pp0.y) * (pp2.x - pp0.x) - (pp1.x - pp0.x) * (pp2.y - pp0.y);
 
 	for (int u = u_min; u <= u_max; u++) {
 		for (int v = v_min; v <= v_max; v++) {
-			V3 pp((u + 0.5f) * ppc->a.Length(), (v + 0.5f) * ppc->b.Length(), 0.0f);
-
-			float s = ((pp - pp0) ^ (pp2 - pp0)).z() / denom;
-			float t = -((pp - pp0) ^ (pp1 - pp0)).z() / denom;
+			glm::vec3 pp(u + 0.5f, v + 0.5f, 0.0f);
+			
+			float s = ((pp2.x - pp0.x) * (pp.y - pp0.y) - (pp2.y - pp0.y) * (pp.x - pp0.x)) / denom;
+			float t = ((pp1.y - pp0.y) * (pp.x - pp0.x) - (pp1.x - pp0.x) * (pp.y - pp0.y)) / denom;
 
 			// if the point is outside the triangle, skip it.
 			if (s < 0 || s > 1 || t < 0 || t > 1 || s + t > 1) continue;
-				
-			V3 a = Q * V3((float)u + 0.5f, (float)v + 0.5f, 1.0f);
-			float w2 = a.x() + a.y() + a.z();
-			float s2 = a.y() / w2;
-			float t2 = a.z() / w2;
 
-			// locate the corresponding point on the triangle plane.
-			V3 p = p0.v * (1 - s2 - t2) + p1.v * s2 + p2.v * t2;
+			// interpolate in screen space
+			pp.z = pp0.z * (1.0f - s - t) + pp1.z * s + pp2.z * t;
 
-			if (scene->rasterization_mode == MODEL_SPACE_RASTERIZATION) {
-				// project the point on the screen space.
-				// if the point is behind the camera, skip this pixel.
-				if (!ppc->Project(p, pp)) continue;
-			} else {
-				// interpolate the z coordinate
-				pp[2] = pp0.z() * (1.0f - s - t) + pp1.z() * s + pp2.z() * t;
-
-				// if the point is behind the camera, skip this pixel.
-				if (pp.z() <= 0) continue;
-			}
-
-			// check if the point is occluded by other triangles.
-			if (zb[(h-1-v)*w+u] >= pp.z()) continue;
-
+			// if the point is behind the camera, skip this pixel.
+			if (pp.z <= 0) continue;
 			
-			if (scene->rasterization_mode == MODEL_SPACE_RASTERIZATION) {
-				s = s2;
-				t = t2;
-			}
+			// check if the point is occluded by other triangles.
+			//if (zb[(h-1-v)*w+u] <= pp.z) continue;
 
-			V3 c;
-
-			if (scene->shading_mode == PHONG_SHADING) {
-				// interpolate the color
-				c = p0.c * (1.0f - s - t) + p1.c * s + p2.c * t;
-
-				// interpolate the normal for Phong shading
-				V3 n = p0.n * (1.0f - s - t) + p1.n * s + p2.n * t;
-				c = scene->light->GetColor(ppc, p, c, n);
-			} else if (scene->shading_mode == GOURAUD_SHADING) {
-				// just interpolate the vertex colors
-				c = c0 * (1.0f - s - t) + c1 * s + c2 * t;
-			}
-
-			// draw the pixel (u,v) with the interpolated color.
-			Set(u, v, c.GetColor(), pp.z());
+			// set bg color
+			Set(u, v, clear_color, pp.z);
+			//Set(u, v, glm::vec3(1, 1, 1), pp.z);
 		}
 	}
 }
 
-void FrameBuffer::rasterizeWithTexture(PPC* ppc, const M33 &camMat, const Vertex &p0, const Vertex &p1, const Vertex &p2, Texture* texture) {
-	AABB box;
+float FrameBuffer::maxDepth(Camera* camera, const std::vector<Vertex>& vertices) {
+	float max_z = 0.0f;
 
-	// if the area is too small, skip this triangle.
-	if (((p1.v - p0.v) ^ (p2.v - p0.v)).Length() < 1e-7) return;
-
-	bool isFront = false;
-	V3 pp0, pp1, pp2;
-	if (!ppc->Project(p0.v, pp0)) return;
-	if (!ppc->Project(p1.v, pp1)) return;
-	if (!ppc->Project(p2.v, pp2)) return;
-
-	// compute the bounding box
-	box.AddPoint(pp0);
-	box.AddPoint(pp1);
-	box.AddPoint(pp2);
-
-	// the bounding box should be inside the screen
-	int u_min = (int)(box.minCorner().x() + 0.5f);
-	if (u_min < 0) u_min = 0;;
-	if (u_min > w) return;
-	int u_max = (int)(box.maxCorner().x() - 0.5f);
-	if (u_max >= w) u_max = w - 1;
-	if (u_max < 0) return;
-	int v_min = (int)(box.minCorner().y() + 0.5f);
-	if (v_min < 0) v_min = 0;
-	if (v_min > h) return;
-	int v_max = (int)(box.maxCorner().y() - 0.5f);
-	if (v_max >= h) v_max = h - 1;
-	if (v_max < 0) return;
-
-	// the bounding box of texture coordinate
-	AABB boxTexCoord;
-	boxTexCoord.AddPoint(V3(p0.t[0], p0.t[1], 0.0f));
-	boxTexCoord.AddPoint(V3(p1.t[0], p1.t[1], 0.0f));
-	boxTexCoord.AddPoint(V3(p2.t[0], p2.t[1], 0.0f));
-
-	// set the mipmap according to the AABB
-	texture->SetMipMap(u_max - u_min, v_max - v_min, boxTexCoord.maxCorner().x() - boxTexCoord.minCorner().x(), boxTexCoord.maxCorner().y() - boxTexCoord.minCorner().y());
-
-	// setup some variables
-	float denom = ((pp1 - pp0) ^ (pp2 - pp0)).z();
-	M33 Q;
-	Q.SetColumn(0, p0.v - ppc->C);
-	Q.SetColumn(1, p1.v - ppc->C);
-	Q.SetColumn(2, p2.v - ppc->C);
-	Q = Q.Inverted() * camMat;
-
-
-
-	for (int u = u_min; u <= u_max; u++) {
-		for (int v = v_min; v <= v_max; v++) {
-			V3 pp((u + 0.5f) * ppc->a.Length(), (v + 0.5f) * ppc->b.Length(), 0.0f);
-
-			float s = ((pp - pp0) ^ (pp2 - pp0)).z() / denom;
-			float t = -((pp - pp0) ^ (pp1 - pp0)).z() / denom;
-
-			// if the point is outside the triangle, skip it.
-			if (s < 0 || s > 1 || t < 0 || t > 1 || s + t > 1) continue;
-				
-			V3 a = Q * V3((float)u + 0.5f, (float)v + 0.5f, 1.0f);
-			float w2 = a.x() + a.y() + a.z();
-			float s2 = a.y() / w2;
-			float t2 = a.z() / w2;
-
-			// unproject and locate the corresponding point on the triangle plane.
-			V3 p = p0.v * (1 - s2 - t2) + p1.v * s2 + p2.v * t2;
-
-			if (scene->rasterization_mode == MODEL_SPACE_RASTERIZATION) {
-				// project the point on the screen space.
-				// if the point is behind the camera, skip this pixel.
-				if (!ppc->Project(p, pp)) continue;
-			} else {
-				// interpolate the z coordinate
-				pp[2] = pp0.z() * (1.0f - s - t) + pp1.z() * s + pp2.z() * t;
-
-				// if the point is behind the camera, skip this pixel.
-				if (pp.z() <= 0) continue;
-			}
-
-			// check if the point is occluded by other triangles.
-			if (zb[(h-1-v)*w+u] >= pp.z()) continue;
-
-			if (scene->rasterization_mode == MODEL_SPACE_RASTERIZATION) {
-				s = s2;
-				t = t2;
-			}
-
-
-
-			// get the corresponding color by using bi-linear interpolation lookup
-			float t_x = p0.t[0] * (1.0f - s - t) + p1.t[0] * s + p2.t[0] * t;
-			float t_y = p0.t[1] * (1.0f - s - t) + p1.t[1] * s + p2.t[1] * t;
-
-
-
-			V3 c = texture->GetColor(t_x, t_y);
-
-			// draw the pixel (u,v) with the interpolated color.
-			Set(u, v, c.GetColor(), pp.z());
+	for (int i = 0; i < vertices.size(); ++i) {
+		glm::vec3 pp;
+		camera->Project(vertices[i].position, pp);
+		if (pp.z > max_z) {
+			max_z = pp.z;
 		}
 	}
 
+	return max_z;
+}
+
+unsigned int FrameBuffer::GetColor(const glm::vec3& clr) const {
+	unsigned int ret = 0xFF000000;
+
+	int red = (int) (clr.x * 255.0f);
+	if (red > 255) red = 255;
+
+	int green = (int) (clr.y * 255.0f);
+	if (green > 255) green = 255;
+	if (green < 0) green = 0;
+
+	int blue = (int) (clr.z * 255.0f);
+	if (blue > 255) blue = 255;
+	if (blue < 0) blue = 0;
+
+	return 0xFF000000 + red + (green << 8) + (blue << 16);
+}
+
+glm::vec3 FrameBuffer::convertScreenCoordinate(const glm::vec3& p) const {
+	glm::vec3 a;
+	a.x = w * 0.5 + p.x * w * 0.5;
+	a.y = h * 0.5 - p.y * h * 0.5;
+	a.z = p.z;
+
+	return a;
 }

@@ -2,7 +2,7 @@
 #include "GLWidget3D.h"
 #include "MainWindow.h"
 #include <GL/GLU.h>
-//#include "GLUtils.h"
+#include "GLUtils.h"
 
 #define SQR(x)	((x) * (x))
 
@@ -13,31 +13,25 @@ GLWidget3D::GLWidget3D() {
  * This event handler is called when the mouse press events occur.
  */
 void GLWidget3D::mousePressEvent(QMouseEvent *e) {
-	lastPos = e->pos();
+	camera.mousePress(e->x(), e->y());
 }
 
 /**
  * This event handler is called when the mouse release events occur.
  */
 void GLWidget3D::mouseReleaseEvent(QMouseEvent *e) {
-	updateGL();
 }
 
 /**
  * This event handler is called when the mouse move events occur.
  */
 void GLWidget3D::mouseMoveEvent(QMouseEvent *e) {
-	float dx = (float)(e->x() - lastPos.x());
-	float dy = (float)(e->y() - lastPos.y());
-	lastPos = e->pos();
-
-	if (e->buttons() & Qt::LeftButton) {
-		camera.changeXRotation(dy);
-		camera.changeYRotation(dx);
-	} else if (e->buttons() & Qt::RightButton) {
-		camera.changeXYZTranslation(0, 0, -dy * camera.dz * 0.02f);
-	} else if (e->buttons() & Qt::MidButton) {
-		camera.changeXYZTranslation(-dx, dy, 0);
+	if (e->buttons() & Qt::LeftButton) { // Rotate
+		camera.rotate(e->x(), e->y());
+	} else if (e->buttons() & Qt::MidButton) { // Move
+		camera.move(e->x(), e->y());
+	} else if (e->buttons() & Qt::RightButton) { // Zoom
+		camera.zoom(e->x(), e->y());
 	}
 
 	updateGL();
@@ -63,12 +57,15 @@ void GLWidget3D::initializeGL() {
 	glutils::drawBox(1, 1, 1, glm::vec4(1, 1, 1, 1), glm::mat4(), vertices);
 	renderManager.addObject("test", vertices);
 	*/
+
+	fb = new FrameBuffer(width(), height());
 }
 
 /**
  * This function is called whenever the widget has been resized.
  */
 void GLWidget3D::resizeGL(int width, int height) {
+	/*
 	height = height?height:1;
 
 	glViewport( 0, 0, (GLint)width, (GLint)height );
@@ -76,6 +73,12 @@ void GLWidget3D::resizeGL(int width, int height) {
 	glLoadIdentity();
 	gluPerspective(60, (GLfloat)width/(GLfloat)height, 0.1f, 10000);
 	glMatrixMode(GL_MODELVIEW);
+	*/
+
+	camera.updatePMatrix(width, height);
+
+	delete fb;
+	fb = new FrameBuffer(width, height);
 }
 
 /**
@@ -84,9 +87,23 @@ void GLWidget3D::resizeGL(int width, int height) {
 void GLWidget3D::paintGL() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-	glMatrixMode(GL_MODELVIEW);
-   	camera.applyCamTransform();	
+	fb->setClearColor(glm::vec3(1, 1, 1));
+	fb->clear();
 
-	//renderManager.renderAll();
+	//fb->Draw3DSegment(&camera, glm::vec3(0, 0, 0), glm::vec3(0, 0, 0), glm::vec3(1, 1, 0), glm::vec3(0, 0, 0));
+
+	std::vector<std::vector<Vertex> > vertices;
+	/*
+	vertices.resize(2);
+	vertices[0].push_back(Vertex(glm::vec3(-1, 0, 0), glm::vec3(0, 0, 1)));
+	vertices[0].push_back(Vertex(glm::vec3(1, 0, 0), glm::vec3(0, 0, 1)));
+	vertices[0].push_back(Vertex(glm::vec3(0, 1, 0), glm::vec3(0, 0, 1)));
+	vertices[1].push_back(Vertex(glm::vec3(-1, 0, 0), glm::vec3(0, 0, 1)));
+	vertices[1].push_back(Vertex(glm::vec3(-1, 0, -1), glm::vec3(0, 0, 1)));
+	vertices[1].push_back(Vertex(glm::vec3(0, 1, 0), glm::vec3(0, 0, 1)));*/
+	glutils::drawBox(1, 1, 1, glm::vec4(1, 1, 1, 1), glm::mat4(), vertices);	
+	fb->rasterize(&camera, vertices);
+
+	fb->draw();
 }
 

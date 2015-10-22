@@ -6,6 +6,7 @@
 #include "Camera.h"
 #include <QVector2D>
 #include <vector>
+#include "FrameBuffer.h"
 
 using namespace std;
 
@@ -15,6 +16,7 @@ class GLWidget3D : public QGLWidget {
 private:
 	Camera camera;
 	QPoint lastPos;
+	FrameBuffer* fb;
 
 public:
 	GLWidget3D();
