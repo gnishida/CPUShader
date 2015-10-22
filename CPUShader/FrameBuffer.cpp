@@ -72,6 +72,16 @@ FrameBuffer::~FrameBuffer() {
 	delete [] zb;
 }
 
+void FrameBuffer::resize(int _w, int _h) {
+	delete [] pix;
+	delete [] zb;
+
+	w = _w;
+	h = _h;
+	pix = new unsigned int[w*h];
+	zb  = new float[w*h];
+}
+
 // rendering callback; see header file comment
 void FrameBuffer::draw() {
 	// SW window, just transfer computed pixels from pix to HW for display

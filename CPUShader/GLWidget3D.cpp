@@ -77,8 +77,7 @@ void GLWidget3D::resizeGL(int width, int height) {
 
 	camera.updatePMatrix(width, height);
 
-	delete fb;
-	fb = new FrameBuffer(width, height);
+	fb->resize(width, height);
 }
 
 /**

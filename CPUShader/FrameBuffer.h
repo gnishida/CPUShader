@@ -41,6 +41,7 @@ public:
 	FrameBuffer(int _w, int _h);
 	~FrameBuffer();
 
+	void resize(int _w, int _h);
 	void draw();
 
 	void setClearColor(const glm::vec3& clear_color);
