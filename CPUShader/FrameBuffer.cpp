@@ -5,6 +5,7 @@
 #include <math.h>
 #include <algorithm>
 #include <QGLWidget>
+#include <QDir>
 
 using namespace std;
 
@@ -57,14 +58,38 @@ glm::vec3 AABB::Size() const {
 	return corners[1] - corners[0];
 }
 
+Stroke::Stroke(const std::string& filename) {
+	stroke_image = cv::imread(filename.c_str());
+}
 
-// makes an OpenGL window that supports SW, HW rendering, that can be displayed on screen
-//        and that receives UI events, i.e. keyboard, mouse, etc.
+glm::vec3 Stroke::getColor(int x, int y) const {
+	// return white color if the pixel is outside the stroke image
+	if (x < 0 || x >= stroke_image.cols || y < 0 || y >= stroke_image.rows) return glm::vec3(1, 1, 1);
+
+	int b = stroke_image.at<cv::Vec3b>(y, x)[0];
+	int g = stroke_image.at<cv::Vec3b>(y, x)[1];
+	int r = stroke_image.at<cv::Vec3b>(y, x)[2];
+
+	return glm::vec3(r, g, b);
+}
+
 FrameBuffer::FrameBuffer(int _w, int _h) {
 	w = _w;
 	h = _h;
 	pix = new unsigned int[w*h];
 	zb  = new float[w*h];
+
+	// load strokes
+	{
+		QDir dir("../strokes/");
+
+		QStringList filters;
+		filters << "*.png";
+		QFileInfoList fileInfoList = dir.entryInfoList(filters, QDir::Files|QDir::NoDotAndDotDot);
+		for (int i = 0; i < fileInfoList.size(); ++i) {
+			strokes.push_back(Stroke(fileInfoList[i].absoluteFilePath().toUtf8().constData()));
+		}
+	}
 }
 
 FrameBuffer::~FrameBuffer() {
@@ -82,9 +107,7 @@ void FrameBuffer::resize(int _w, int _h) {
 	zb  = new float[w*h];
 }
 
-// rendering callback; see header file comment
 void FrameBuffer::draw() {
-	// SW window, just transfer computed pixels from pix to HW for display
 	glDrawPixels(w, h, GL_RGBA, GL_UNSIGNED_BYTE, pix);
 }
 
@@ -107,54 +130,25 @@ void FrameBuffer::clear() {
 
 /**
  * Set one pixel to given color.
- * This function does not check neigher the range and the zbuffer.
- *
- * @param u		x coordinate of the pixel
- * @param v		y coordinate of the pixel
- * @param clr	the color
- */
-void FrameBuffer::Set(int u, int v, const glm::vec3& clr) {
-	pix[(h-1-v)*w+u] = GetColor(clr);
-}
-
-/**
- * Set one pixel to given color.
- * This function does not check the range, but check the zbuffer.
- *
- * @param u		x coordinate of the pixel
- * @param v		y coordinate of the pixel
- * @param clr	the color
- * @param z		z buffer
- */
-void FrameBuffer::Set(int u, int v, const glm::vec3& clr, float z) {
-	//if (zb[(h-1-v)*w+u] <= z) return;
-
-	pix[(h-1-v)*w+u] = GetColor(clr);
-	zb[(h-1-v)*w+u] = z;
-}
-
-/**
- * Set one pixel to given color.
  * If the specified pixel is out of the screen, it does nothing.
  *
  * @param u		x coordinate of the pixel
  * @param v		y coordinate of the pixel
  * @param clr	the color
  */
-void FrameBuffer::SetGuarded(int u, int v, const glm::vec3& clr, float z) {
+void FrameBuffer::Set(int u, int v, const glm::vec3& clr, float z) {
 	if (u < 0 || u > w-1 || v < 0 || v > h-1) return;
 
-	Set(u, v, clr, z);
+	//Set(u, v, clr, z);
+	pix[(h-1-v)*w+u] = GetColor(clr);
+	zb[(h-1-v)*w+u] = z;
 }
 
-// set all z values in SW ZB to z0
-/*
-void FrameBuffer::SetZB(float z0) {
-	for (int i = 0; i < w*h; i++) {
-		zb[i] = z0;
-	}
+void FrameBuffer::Add(int u, int v, const glm::vec3& color) {
+	if (u < 0 || u > w-1 || v < 0 || v > h-1) return;
+
+	pix[(h-1-v)*w+u] = ~(~pix[(h-1-v)*w+u] | ~GetColor(color));
 }
-*/
 
 /**
  * Draw 2D segment with color interpolation.
@@ -181,7 +175,7 @@ void FrameBuffer::Draw2DSegment(const glm::vec3& p0, const glm::vec3& c0, const 
 		glm::vec3 currc = c0 + (c1-c0) * frac;
 		int u = (int)curr[0];
 		int v = (int)curr[1];
-		SetGuarded(u, v, currc, curr.z);
+		Set(u, v, currc, curr.z);
 	}
 }
 
@@ -213,24 +207,52 @@ void FrameBuffer::Draw3DSegment(Camera* camera, const glm::vec3& p0, const glm::
  * @param p1	the second point of the segment
  * @param c1	the color of the second point
  */
-void FrameBuffer::Draw2DStroke(const glm::vec3& p0, const glm::vec3& c0, const glm::vec3& p1, const glm::vec3& c1) {
-	float dx = fabsf(p0.x - p1.x);
-	float dy = fabsf(p0.y - p1.y);
+void FrameBuffer::Draw2DStroke(const glm::vec3& p0, const glm::vec3& p1, const Stroke& stroke) {
+	float theta = -atan2(p1.y - p0.y, p1.x - p0.x);
+	float scale = 152.0f / glm::length(p1 - p0);
 
-	int n;
-	if (dx < dy) {
-		n = 1 + (int)dy;
-	} else {
-		n = 1 + (int)dx;
-	}
+	cv::Mat_<float> R(2, 2);
+	R(0, 0) = scale * cosf(theta);
+	R(0, 1) = -scale * sinf(theta);
+	R(1, 0) = scale * sinf(theta);
+	R(1, 1) = scale * cosf(theta);
 
-	for (int i = 0; i <= n; i++) {
-		float frac = (float) i / (float)n;
-		glm::vec3 curr = p0 + (p1-p0) * frac;
-		glm::vec3 currc = c0 + (c1-c0) * frac;
-		int u = (int)curr[0];
-		int v = (int)curr[1];
-		SetGuarded(u, v, currc, curr.z);
+	AABB box;
+	box.AddPoint(p0);
+	box.AddPoint(p1);
+
+	// the bounding box should be inside the screen
+	int u_min = (int)(box.minCorner().x + 0.5f);
+	u_min -= 20 * scale;
+	if (u_min < 0) u_min = 0;;
+	int u_max = (int)(box.maxCorner().x - 0.5f);
+	u_max += 20 * scale;
+	if (u_max >= w) u_max = w - 1;
+	int v_min = (int)(box.minCorner().y + 0.5f);
+	v_min -= 20 * scale;
+	if (v_min < 0) v_min = 0;
+	int v_max = (int)(box.maxCorner().y - 0.5f);
+	v_max += 20 * scale;
+	if (v_max >= h) v_max = h - 1;
+
+	for (int u = u_min; u <= u_max; u++) {
+		for (int v = v_min; v <= v_max; v++) {
+			cv::Mat_<float> X(2, 1);
+			X(0, 0) = u - p0.x;
+			X(1, 0) = v - p0.y;
+
+			cv::Mat_<float> A(2, 1);
+			A(0, 0) = 20;
+			A(1, 0) = 20;
+
+			cv::Mat_<float> T = R * X + A;
+			//std::cout << T(0, 0) << "," << T(1, 0) << std::endl;
+
+			glm::vec3 color = stroke.getColor(T(0, 0), T(1, 0));
+			
+			Add(u, v, color);
+			//SetGuarded(u, v, color, 0);
+		}
 	}
 }
 
@@ -243,7 +265,7 @@ void FrameBuffer::Draw2DStroke(const glm::vec3& p0, const glm::vec3& c0, const g
  * @param p1	the second point of the segment
  * @param c1	the color of the second point
  */
-void FrameBuffer::Draw3DStroke(Camera* camera, const glm::vec3& p0, const glm::vec3& c0, const glm::vec3& p1, const glm::vec3& c1) {
+void FrameBuffer::Draw3DStroke(Camera* camera, const glm::vec3& p0, const glm::vec3& p1) {
 	glm::vec3 q0 = p0;
 	glm::vec3 q1 = p1;
 
@@ -268,19 +290,18 @@ void FrameBuffer::Draw3DStroke(Camera* camera, const glm::vec3& p0, const glm::v
 
 	srand(q0.x * 100 + q0.y * 50 + q0.z * 10 + q1.x * 20 + q1.y * 30 + q1.z * 40);
 
+	int stroke_index = rand() % strokes.size();
+
+	/*
 	glm::vec3 offset = pp0 - pp1;
 	offset *= 0.01;
 	for (int i = 0; i < 2; ++i) {
 		pp0[i] += ((float)rand() / RAND_MAX - 0.5) * 5 + offset[i];
 		pp1[i] += ((float)rand() / RAND_MAX - 0.5) * 5 - offset[i];
 	}
+	*/
 
-	Draw2DStroke(pp0, c0, pp1, c1);
-}
-
-bool FrameBuffer::isHidden(int u, int v, float z) {
-	if (zb[(h-1-v)*w+u] >= z) return true;
-	else return false;
+	Draw2DStroke(pp0, pp1, strokes[stroke_index]);
 }
 
 /**
@@ -296,30 +317,29 @@ void FrameBuffer::rasterize(Camera* camera, const std::vector<std::vector<Vertex
 	}
 
 	for (auto it = sortedVertices.rbegin(); it != sortedVertices.rend(); ++it) {
-		rasterize(camera, it->second);
+		rasterizePolygon(camera, it->second);
 	}
 }
 
 /**
  * １つのfaceを描画する。
  */
-void FrameBuffer::rasterize(Camera* camera, const std::vector<Vertex>& vertices) {
+void FrameBuffer::rasterizePolygon(Camera* camera, const std::vector<Vertex>& vertices) {
 	for (int i = 1; i < vertices.size() - 1; ++i) {
-		rasterize(camera, vertices[0], vertices[i], vertices[i + 1]);
+		rasterizeTriangle(camera, vertices[0], vertices[i], vertices[i + 1]);
 	}
 
 	for (int i = 0; i < vertices.size(); ++i) {
 		int next = (i + 1) % vertices.size();
 
-		//Draw3DSegment(camera, vertices[i].position, glm::vec3(0, 0, 0), vertices[next].position, glm::vec3(0, 0, 0));
-		Draw3DStroke(camera, vertices[i].position, glm::vec3(0, 0, 0), vertices[next].position, glm::vec3(0, 0, 0));
+		Draw3DStroke(camera, vertices[i].position, vertices[next].position);
 	}
 }
 
 /**
- * １つの三角形の描画する。
+ * １つの三角形の領域を、背景色で塗りつぶす。
  */
-void FrameBuffer::rasterize(Camera* camera, const Vertex& p0, const Vertex& p1, const Vertex& p2) {
+void FrameBuffer::rasterizeTriangle(Camera* camera, const Vertex& p0, const Vertex& p1, const Vertex& p2) {
 	AABB box;
 
 	// if the area is too small, skip this triangle.
@@ -373,7 +393,6 @@ void FrameBuffer::rasterize(Camera* camera, const Vertex& p0, const Vertex& p1, 
 
 			// set bg color
 			Set(u, v, clear_color, pp.z);
-			//Set(u, v, glm::vec3(1, 1, 1), pp.z);
 		}
 	}
 }

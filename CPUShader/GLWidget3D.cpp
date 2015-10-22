@@ -103,6 +103,9 @@ void GLWidget3D::paintGL() {
 	glutils::drawBox(1, 1, 1, glm::vec4(1, 1, 1, 1), glm::mat4(), vertices);	
 	fb->rasterize(&camera, vertices);
 
+	//fb->Draw2DSegment(glm::vec3(100, 100, 0), glm::vec3(1, 0, 1), glm::vec3(200, 100, 0), glm::vec3(1, 0, 1));
+	//fb->Draw2DStroke(glm::vec3(100, 100, 0), glm::vec3(0, 0, 0), glm::vec3(200, 200, 0), glm::vec3(0, 0, 0));
+
 	fb->draw();
 }
 

@@ -6,6 +6,8 @@
 #include "Camera.h"
 #include "Vertex.h"
 #include <vector>
+#include <opencv/cv.h>
+#include <opencv/highgui.h>
 
 // axis aligned bounding box class
 class AABB {
@@ -19,6 +21,15 @@ public:
 	const glm::vec3& minCorner() const;
 	const glm::vec3& maxCorner() const;
 	glm::vec3 Size() const;
+};
+
+class Stroke {
+public:
+	cv::Mat stroke_image;
+
+public:
+	Stroke(const std::string& filename);
+	glm::vec3 getColor(int x, int y) const;
 };
 
 class FrameBuffer {
@@ -37,6 +48,8 @@ public:
 
 	glm::vec3 clear_color;
 
+	std::vector<Stroke> strokes;
+
 public:
 	FrameBuffer(int _w, int _h);
 	~FrameBuffer();
@@ -46,19 +59,16 @@ public:
 
 	void setClearColor(const glm::vec3& clear_color);
 	void clear();
-	void Set(int u, int v, const glm::vec3& clr);
 	void Set(int u, int v, const glm::vec3& clr, float z);
-	void SetGuarded(int u, int v, const glm::vec3& clr, float z);
+	void Add(int u, int v, const glm::vec3& color);
 	void Draw2DSegment(const glm::vec3& p0, const glm::vec3& c0, const glm::vec3& p1, const glm::vec3& c1);
 	void Draw3DSegment(Camera* camera, const glm::vec3& p0, const glm::vec3& c0, const glm::vec3& p1, const glm::vec3& c1);
-	void Draw2DStroke(const glm::vec3& p0, const glm::vec3& c0, const glm::vec3& p1, const glm::vec3& c1);
-	void Draw3DStroke(Camera* camera, const glm::vec3& p0, const glm::vec3& c0, const glm::vec3& p1, const glm::vec3& c1);
-
-	bool isHidden(int u, int v, float z);
+	void Draw2DStroke(const glm::vec3& p0, const glm::vec3& p1, const Stroke& stroke);
+	void Draw3DStroke(Camera* camera, const glm::vec3& p0, const glm::vec3& p1);
 
 	void rasterize(Camera* camera, const std::vector<std::vector<Vertex> >& vertices);
-	void rasterize(Camera* camera, const std::vector<Vertex>& vertices);
-	void rasterize(Camera* camera, const Vertex& p0, const Vertex& p1, const Vertex& p2);
+	void rasterizePolygon(Camera* camera, const std::vector<Vertex>& vertices);
+	void rasterizeTriangle(Camera* camera, const Vertex& p0, const Vertex& p1, const Vertex& p2);
 
 	float maxDepth(Camera* camera, const std::vector<Vertex>& vertices);
 
