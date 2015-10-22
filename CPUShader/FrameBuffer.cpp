@@ -95,14 +95,27 @@ void FrameBuffer::resize(int _w, int _h) {
 	zb  = new float[w*h];
 }
 
-void FrameBuffer::loadStrokes(const std::string& dirname) {
-	QDir dir(dirname.c_str());
+void FrameBuffer::loadStrokes(const std::string& dirname1, const std::string& dirname2) {
+	{
+		QDir dir(dirname1.c_str());
 
-	QStringList filters;
-	filters << "*.png";
-	QFileInfoList fileInfoList = dir.entryInfoList(filters, QDir::Files|QDir::NoDotAndDotDot);
-	for (int i = 0; i < fileInfoList.size(); ++i) {
-		strokes.push_back(Stroke(fileInfoList[i].absoluteFilePath().toUtf8().constData()));
+		QStringList filters;
+		filters << "*.png";
+		QFileInfoList fileInfoList = dir.entryInfoList(filters, QDir::Files|QDir::NoDotAndDotDot);
+		for (int i = 0; i < fileInfoList.size(); ++i) {
+			strokes.push_back(Stroke(fileInfoList[i].absoluteFilePath().toUtf8().constData()));
+		}
+	}
+
+	{
+		QDir dir(dirname2.c_str());
+
+		QStringList filters;
+		filters << "*.png";
+		QFileInfoList fileInfoList = dir.entryInfoList(filters, QDir::Files|QDir::NoDotAndDotDot);
+		for (int i = 0; i < fileInfoList.size(); ++i) {
+			strokes_mini.push_back(Stroke(fileInfoList[i].absoluteFilePath().toUtf8().constData()));
+		}
 	}
 }
 
@@ -206,9 +219,22 @@ void FrameBuffer::Draw3DSegment(Camera* camera, const glm::vec3& p0, const glm::
  * @param p1	the second point of the segment
  * @param c1	the color of the second point
  */
-void FrameBuffer::Draw2DStroke(const glm::vec3& p0, const glm::vec3& p1, const Stroke& stroke) {
+void FrameBuffer::Draw2DStroke(const glm::vec3& p0, const glm::vec3& p1, int stroke_index) {
 	float theta = -atan2(p1.y - p0.y, p1.x - p0.x);
-	float scale_x = 152.0f / glm::length(p1 - p0);
+
+	float scale_x;
+	float margin_size;
+	Stroke* stroke;
+	if (glm::length(p1 - p0) > 100) {
+		margin_size = 20.0f;
+		scale_x = (strokes[0].stroke_image.cols - margin_size * 2) / glm::length(p1 - p0);
+		stroke = &strokes[stroke_index];
+	} else {
+		margin_size = 10.0f;
+		scale_x = (strokes_mini[0].stroke_image.cols - margin_size * 2) / glm::length(p1 - p0);
+		stroke = &strokes_mini[stroke_index];
+	}
+
 	float scale_y = 1.0f;//max(1.0f, scale_x);
 
 	cv::Mat_<float> R(2, 2);
@@ -223,16 +249,16 @@ void FrameBuffer::Draw2DStroke(const glm::vec3& p0, const glm::vec3& p1, const S
 
 	// the bounding box should be inside the screen
 	int u_min = (int)(box.minCorner().x + 0.5f);
-	u_min -= 20 * max(scale_x, scale_y);
+	u_min -= margin_size * max(scale_x, scale_y);
 	if (u_min < 0) u_min = 0;;
 	int u_max = (int)(box.maxCorner().x - 0.5f);
-	u_max += 20 * max(scale_x, scale_y);
+	u_max += margin_size * max(scale_x, scale_y);
 	if (u_max >= w) u_max = w - 1;
 	int v_min = (int)(box.minCorner().y + 0.5f);
-	v_min -= 20 * max(scale_x, scale_y);
+	v_min -= margin_size * max(scale_x, scale_y);
 	if (v_min < 0) v_min = 0;
 	int v_max = (int)(box.maxCorner().y - 0.5f);
-	v_max += 20 * max(scale_x, scale_y);
+	v_max += margin_size * max(scale_x, scale_y);
 	if (v_max >= h) v_max = h - 1;
 
 	for (int u = u_min; u <= u_max; u++) {
@@ -242,12 +268,12 @@ void FrameBuffer::Draw2DStroke(const glm::vec3& p0, const glm::vec3& p1, const S
 			X(1, 0) = v - p0.y;
 
 			cv::Mat_<float> A(2, 1);
-			A(0, 0) = 20;
-			A(1, 0) = 20;
+			A(0, 0) = margin_size;
+			A(1, 0) = margin_size;
 
 			cv::Mat_<float> T = R * X + A;
 
-			glm::vec3 color = stroke.getColor(T(0, 0), T(1, 0));
+			glm::vec3 color = stroke->getColor(T(0, 0), T(1, 0));
 			//std::cout << color.x << "," << color.y << "," << color.z << std::endl;
 			
 			Add(u, v, color);
@@ -300,7 +326,7 @@ void FrameBuffer::Draw3DStroke(Camera* camera, const glm::vec3& p0, const glm::v
 	}
 	*/
 
-	Draw2DStroke(pp0, pp1, strokes[stroke_index]);
+	Draw2DStroke(pp0, pp1, stroke_index);
 }
 
 /**
