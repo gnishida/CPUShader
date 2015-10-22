@@ -41,23 +41,6 @@ void GLWidget3D::mouseMoveEvent(QMouseEvent *e) {
  * This function is called once before the first call to paintGL() or resizeGL().
  */
 void GLWidget3D::initializeGL() {
-	glClearColor(0.443, 0.439, 0.458, 0.0);
-	//glClearColor(1, 1, 1, 1);
-
-	glEnable(GL_DEPTH_TEST);
-	//glEnable(GL_LIGHTING);
-	//glEnable(GL_LIGHT0);
-	glEnable(GL_COLOR_MATERIAL);
-
-	//static GLfloat lightPosition[4] = {0.0f, 0.0f, 100.0f, 0.0f};
-	//glLightfv(GL_LIGHT0, GL_POSITION, lightPosition);
-
-	/*
-	std::vector<std::vector<Vertex> > vertices;
-	glutils::drawBox(1, 1, 1, glm::vec4(1, 1, 1, 1), glm::mat4(), vertices);
-	renderManager.addObject("test", vertices);
-	*/
-
 	fb = new FrameBuffer(width(), height());
 	fb->loadStrokes("..\\strokes", "..\\strokes_mini\\");
 }
@@ -66,16 +49,6 @@ void GLWidget3D::initializeGL() {
  * This function is called whenever the widget has been resized.
  */
 void GLWidget3D::resizeGL(int width, int height) {
-	/*
-	height = height?height:1;
-
-	glViewport( 0, 0, (GLint)width, (GLint)height );
-	glMatrixMode(GL_PROJECTION);
-	glLoadIdentity();
-	gluPerspective(60, (GLfloat)width/(GLfloat)height, 0.1f, 10000);
-	glMatrixMode(GL_MODELVIEW);
-	*/
-
 	camera.updatePMatrix(width, height);
 
 	fb->resize(width, height);
