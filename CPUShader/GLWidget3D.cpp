@@ -42,7 +42,11 @@ void GLWidget3D::mouseMoveEvent(QMouseEvent *e) {
  */
 void GLWidget3D::initializeGL() {
 	fb = new FrameBuffer(width(), height());
-	fb->loadStrokes("..\\strokes", "..\\strokes_mini\\");
+	std::vector<std::string> dirnames(3);
+	dirnames[0] = "..\\strokes";
+	dirnames[1] = "..\\strokes2";
+	dirnames[2] = "..\\strokes4";
+	fb->loadStrokes(dirnames);
 }
 
 /**

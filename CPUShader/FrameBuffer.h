@@ -48,15 +48,14 @@ public:
 
 	glm::vec3 clear_color;
 
-	std::vector<Stroke> strokes;
-	std::vector<Stroke> strokes_mini;
+	std::vector<std::vector<Stroke> > strokes;
 
 public:
 	FrameBuffer(int _w, int _h);
 	~FrameBuffer();
 
 	void resize(int _w, int _h);
-	void loadStrokes(const std::string& dirname1, const std::string& dirname2);
+	void loadStrokes(const std::vector<std::string>& dirnames);
 	void draw();
 
 	void setClearColor(const glm::vec3& clear_color);
