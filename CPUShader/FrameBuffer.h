@@ -48,14 +48,13 @@ public:
 
 	glm::vec3 clear_color;
 
-	std::vector<std::vector<Stroke> > strokes;
+	std::vector<std::vector<glm::vec2> > style_polylines;
 
 public:
 	FrameBuffer(int _w, int _h);
 	~FrameBuffer();
 
 	void resize(int _w, int _h);
-	void loadStrokes(const std::vector<std::string>& dirnames);
 	void draw();
 
 	void setClearColor(const glm::vec3& clear_color);
@@ -64,12 +63,12 @@ public:
 	void Add(int u, int v, const glm::vec3& color);
 	void Draw2DSegment(const glm::vec3& p0, const glm::vec3& c0, const glm::vec3& p1, const glm::vec3& c1);
 	void Draw3DSegment(Camera* camera, const glm::vec3& p0, const glm::vec3& c0, const glm::vec3& p1, const glm::vec3& c1);
-	void Draw2DStroke(const glm::vec3& p0, const glm::vec3& p1, int stroke_index);
-	void Draw3DStroke(Camera* camera, const glm::vec3& p0, const glm::vec3& p1);
+	void Draw3DStroke(Camera* camera, const glm::vec3& p0, const glm::vec3& p1, int seed);
+	void Draw2DPolyline(const glm::vec3& p0, const glm::vec3& p1, int polyline_index);
 
-	void rasterize(Camera* camera, const std::vector<std::vector<Vertex> >& vertices);
-	void rasterizePolygon(Camera* camera, const std::vector<Vertex>& vertices);
-	void rasterizeConcavePolygon(Camera* camera, const std::vector<Vertex>& vertices);
+	void rasterize(Camera* camera, const std::vector<std::vector<Vertex> >& vertices, int seed);
+	void rasterizePolygon(Camera* camera, const std::vector<Vertex>& vertices, int seed);
+	void rasterizeConcavePolygon(Camera* camera, const std::vector<Vertex>& vertices, int seed);
 	void rasterizeTriangle(Camera* camera, const glm::vec3& p0, const glm::vec3& p1, const glm::vec3& p2);
 	void rasterizeTriangle(const glm::vec3& p0, const glm::vec3& p1, const glm::vec3& p2);
 

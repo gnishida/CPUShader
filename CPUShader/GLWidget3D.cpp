@@ -42,11 +42,6 @@ void GLWidget3D::mouseMoveEvent(QMouseEvent *e) {
  */
 void GLWidget3D::initializeGL() {
 	fb = new FrameBuffer(width(), height());
-	std::vector<std::string> dirnames(3);
-	dirnames[0] = "..\\strokes";
-	dirnames[1] = "..\\strokes2";
-	dirnames[2] = "..\\strokes4";
-	fb->loadStrokes(dirnames);
 }
 
 /**
@@ -77,11 +72,11 @@ void GLWidget3D::paintGL() {
 	vertices[1].push_back(Vertex(glm::vec3(-1, 0, -1), glm::vec3(0, 0, 1)));
 	vertices[1].push_back(Vertex(glm::vec3(0, 1, 0), glm::vec3(0, 0, 1)));*/
 	glutils::drawBox(1, 1, 1, glm::vec4(1, 1, 1, 1), glm::mat4(), vertices);	
-	//glutils::drawBox(2, 2, 2, glm::vec4(1, 1, 1, 1), glm::translate(glm::mat4(), glm::vec3(4, 0, 0)), vertices);	
-	fb->rasterize(&camera, vertices);
+	fb->rasterize(&camera, vertices, 0);
 
 	//fb->Draw2DSegment(glm::vec3(100, 100, 0), glm::vec3(1, 0, 1), glm::vec3(200, 100, 0), glm::vec3(1, 0, 1));
 	//fb->Draw2DStroke(glm::vec3(100, 100, 0), glm::vec3(200, 200, 0), fb->strokes[0]);
+	//fb->Draw2DPolyline(glm::vec3(100, 100, 0), glm::vec3(200, 200, 0));
 
 	fb->draw();
 }

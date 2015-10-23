@@ -1,7 +1,5 @@
 ﻿#include "framebuffer.h"
-//#include <libtiff/tiffio.h>
 #include <iostream>
-//#include "scene.h"
 #include <math.h>
 #include <algorithm>
 #include <QGLWidget>
@@ -94,6 +92,46 @@ FrameBuffer::FrameBuffer(int _w, int _h) {
 	h = _h;
 	pix = new unsigned int[w*h];
 	zb  = new float[w*h];
+
+	// initialize stylized polylines
+	style_polylines.resize(5);
+	style_polylines[0].push_back(glm::vec2(-0.025, -0.025));
+	style_polylines[0].push_back(glm::vec2(0.3, 0.035));
+	style_polylines[0].push_back(glm::vec2(0.6, 0.05));
+	style_polylines[0].push_back(glm::vec2(0.85, 0.04));
+	style_polylines[0].push_back(glm::vec2(1.01, 0.02));
+
+	style_polylines[1].push_back(glm::vec2(-0.01, 0.01));
+	style_polylines[1].push_back(glm::vec2(0.13, -0.01));
+	style_polylines[1].push_back(glm::vec2(0.27, -0.02));
+	style_polylines[1].push_back(glm::vec2(0.7, -0.02));
+	style_polylines[1].push_back(glm::vec2(0.81, 0));
+	style_polylines[1].push_back(glm::vec2(1.02, 0));
+
+	style_polylines[2].push_back(glm::vec2(-0.02, 0.0));
+	style_polylines[2].push_back(glm::vec2(0.12, 0.01));
+	style_polylines[2].push_back(glm::vec2(0.37, 0.02));
+	style_polylines[2].push_back(glm::vec2(0.6, 0.02));
+	style_polylines[2].push_back(glm::vec2(0.77, 0.01));
+	style_polylines[2].push_back(glm::vec2(0.91, 0.005));
+	style_polylines[2].push_back(glm::vec2(0.99, -0.01));
+
+	style_polylines[3].push_back(glm::vec2(-0.02, 0.0));
+	style_polylines[3].push_back(glm::vec2(0.57, -0.01));
+	style_polylines[3].push_back(glm::vec2(0.8, -0.01));
+	style_polylines[3].push_back(glm::vec2(1.01, 0.01));
+
+	style_polylines[4].push_back(glm::vec2(-0.01, 0.0));
+	style_polylines[4].push_back(glm::vec2(0.13, -0.01));
+	style_polylines[4].push_back(glm::vec2(0.23, -0.02));
+	style_polylines[4].push_back(glm::vec2(0.31, -0.02));
+	style_polylines[4].push_back(glm::vec2(0.38, -0.01));
+	style_polylines[4].push_back(glm::vec2(0.46, 0.0));
+	style_polylines[4].push_back(glm::vec2(0.61, 0.02));
+	style_polylines[4].push_back(glm::vec2(0.68, 0.03));
+	style_polylines[4].push_back(glm::vec2(0.8, 0.03));
+	style_polylines[4].push_back(glm::vec2(0.88, 0.02));
+	style_polylines[4].push_back(glm::vec2(0.97, 0.01));
 }
 
 FrameBuffer::~FrameBuffer() {
@@ -109,21 +147,6 @@ void FrameBuffer::resize(int _w, int _h) {
 	h = _h;
 	pix = new unsigned int[w*h];
 	zb  = new float[w*h];
-}
-
-void FrameBuffer::loadStrokes(const std::vector<std::string>& dirnames) {
-	strokes.resize(dirnames.size());
-
-	for (int i = 0; i < dirnames.size(); ++i) {
-		QDir dir(dirnames[i].c_str());
-
-		QStringList filters;
-		filters << "*.png";
-		QFileInfoList fileInfoList = dir.entryInfoList(filters, QDir::Files|QDir::NoDotAndDotDot);
-		for (int j = 0; j < fileInfoList.size(); ++j) {
-			strokes[i].push_back(Stroke(fileInfoList[j].absoluteFilePath().toUtf8().constData()));
-		}
-	}
 }
 
 void FrameBuffer::draw() {
@@ -219,76 +242,6 @@ void FrameBuffer::Draw3DSegment(Camera* camera, const glm::vec3& p0, const glm::
 }
 
 /**
- * Draw 2D segment with color interpolation.
- *
- * @param p0	the first point of the segment
- * @param c0	the color of the first point
- * @param p1	the second point of the segment
- * @param c1	the color of the second point
- */
-void FrameBuffer::Draw2DStroke(const glm::vec3& p0, const glm::vec3& p1, int stroke_index) {
-	float theta = -atan2(p1.y - p0.y, p1.x - p0.x);
-
-	float scale_x;
-	float margin_size;
-	Stroke* stroke;
-
-	for (int i = 0; i < strokes.size(); ++i) {
-		if (glm::length(p1 - p0) > 192 / powf(2.0f, i) || i == strokes.size() - 1) {
-			margin_size = 20 / powf(2.0f, i);
-			stroke = &strokes[i][stroke_index];
-			scale_x = (stroke->stroke_image.cols - margin_size * 2) / glm::length(p1 - p0);
-			break;
-		}
-	}
-
-	float scale_y = 1.0f;//max(1.0f, scale_x);
-
-	cv::Mat_<float> R(2, 2);
-	R(0, 0) = scale_x * cosf(theta);
-	R(0, 1) = -scale_x * sinf(theta);
-	R(1, 0) = scale_y * sinf(theta);
-	R(1, 1) = scale_y * cosf(theta);
-
-	AABB box;
-	box.AddPoint(p0);
-	box.AddPoint(p1);
-
-	// the bounding box should be inside the screen
-	int u_min = (int)(box.minCorner().x + 0.5f);
-	u_min -= margin_size * max(scale_x, scale_y);
-	if (u_min < 0) u_min = 0;;
-	int u_max = (int)(box.maxCorner().x - 0.5f);
-	u_max += margin_size * max(scale_x, scale_y);
-	if (u_max >= w) u_max = w - 1;
-	int v_min = (int)(box.minCorner().y + 0.5f);
-	v_min -= margin_size * max(scale_x, scale_y);
-	if (v_min < 0) v_min = 0;
-	int v_max = (int)(box.maxCorner().y - 0.5f);
-	v_max += margin_size * max(scale_x, scale_y);
-	if (v_max >= h) v_max = h - 1;
-
-	for (int u = u_min; u <= u_max; u++) {
-		for (int v = v_min; v <= v_max; v++) {
-			cv::Mat_<float> X(2, 1);
-			X(0, 0) = u - p0.x;
-			X(1, 0) = v - p0.y;
-
-			cv::Mat_<float> A(2, 1);
-			A(0, 0) = margin_size;
-			A(1, 0) = margin_size;
-
-			cv::Mat_<float> T = R * X + A;
-
-			glm::vec3 color = stroke->getColor(T(0, 0), T(1, 0));
-			//std::cout << color.x << "," << color.y << "," << color.z << std::endl;
-			
-			Add(u, v, color);
-		}
-	}
-}
-
-/**
  * Draw 3D segment with color interpolation.
  *
  * @param ppc	the camera
@@ -297,7 +250,7 @@ void FrameBuffer::Draw2DStroke(const glm::vec3& p0, const glm::vec3& p1, int str
  * @param p1	the second point of the segment
  * @param c1	the color of the second point
  */
-void FrameBuffer::Draw3DStroke(Camera* camera, const glm::vec3& p0, const glm::vec3& p1) {
+void FrameBuffer::Draw3DStroke(Camera* camera, const glm::vec3& p0, const glm::vec3& p1, int seed) {
 	glm::vec3 q0 = p0;
 	glm::vec3 q1 = p1;
 
@@ -320,26 +273,52 @@ void FrameBuffer::Draw3DStroke(Camera* camera, const glm::vec3& p0, const glm::v
 	pp0 = convertScreenCoordinate(pp0);
 	pp1 = convertScreenCoordinate(pp1);
 
-	srand(q0.x * 100 + q0.y * 50 + q0.z * 10 + q1.x * 20 + q1.y * 30 + q1.z * 40);
+	srand(seed + q0.x * 100 + q0.y * 50 + q0.z * 10 + q1.x * 20 + q1.y * 30 + q1.z * 40);
 
-	int stroke_index = rand() % strokes.size();
+	int polyline_index = rand() % style_polylines.size();
 
-	/*
-	glm::vec3 offset = pp0 - pp1;
-	offset *= 0.01;
-	for (int i = 0; i < 2; ++i) {
-		pp0[i] += ((float)rand() / RAND_MAX - 0.5) * 5 + offset[i];
-		pp1[i] += ((float)rand() / RAND_MAX - 0.5) * 5 - offset[i];
+	Draw2DPolyline(pp0, pp1, polyline_index);
+}
+
+/**
+ * Draw 2D polyline.
+ *
+ * @param p0	the first point of the segment
+ * @param p1	the second point of the segment
+ */
+void FrameBuffer::Draw2DPolyline(const glm::vec3& p0, const glm::vec3& p1, int polyline_index) {
+	float theta = atan2(p1.y - p0.y, p1.x - p0.x);
+	float scale = glm::length(p1 - p0);
+
+	cv::Mat_<float> R(2, 2);
+	R(0, 0) = scale * cosf(theta);
+	R(0, 1) = -scale * sinf(theta);
+	R(1, 0) = scale * sinf(theta);
+	R(1, 1) = scale * cosf(theta);
+
+	cv::Mat_<float> A(2, 1);
+	A(0, 0) = p0.x;
+	A(1, 0) = p0.y;
+
+	for (int i = 0; i < style_polylines[polyline_index].size() - 1; ++i) {
+		cv::Mat_<float> X0(2, 1);
+		X0(0, 0) = style_polylines[polyline_index][i].x;
+		X0(1, 0) = style_polylines[polyline_index][i].y;
+		cv::Mat_<float> T0 = R * X0 + A;
+
+		cv::Mat_<float> X1(2, 1);
+		X1(0, 0) = style_polylines[polyline_index][i+1].x;
+		X1(1, 0) = style_polylines[polyline_index][i+1].y;
+		cv::Mat_<float> T1 = R * X1 + A;
+
+		Draw2DSegment(glm::vec3(T0(0, 0), T0(1, 0), 0), glm::vec3(0, 0, 0), glm::vec3(T1(0, 0), T1(1, 0), 0), glm::vec3(0, 0, 0));
 	}
-	*/
-
-	Draw2DStroke(pp0, pp1, stroke_index);
 }
 
 /**
  * objectを描画する。
  */
-void FrameBuffer::rasterize(Camera* camera, const std::vector<std::vector<Vertex> >& vertices) {
+void FrameBuffer::rasterize(Camera* camera, const std::vector<std::vector<Vertex> >& vertices, int seed) {
 	std::multimap<float, std::vector<Vertex> > sortedVertices;
 
 	for (int i = 0; i < vertices.size(); ++i) {
@@ -350,9 +329,9 @@ void FrameBuffer::rasterize(Camera* camera, const std::vector<std::vector<Vertex
 
 	for (auto it = sortedVertices.rbegin(); it != sortedVertices.rend(); ++it) {
 		if (it->second.size() == 3) {
-			rasterizePolygon(camera, it->second);
+			rasterizePolygon(camera, it->second, seed);
 		} else {
-			rasterizeConcavePolygon(camera, it->second);
+			rasterizeConcavePolygon(camera, it->second, seed);
 		}
 	}
 }
@@ -360,7 +339,7 @@ void FrameBuffer::rasterize(Camera* camera, const std::vector<std::vector<Vertex
 /**
  * １つのfaceを描画する。
  */
-void FrameBuffer::rasterizePolygon(Camera* camera, const std::vector<Vertex>& vertices) {
+void FrameBuffer::rasterizePolygon(Camera* camera, const std::vector<Vertex>& vertices, int seed) {
 	for (int i = 1; i < vertices.size() - 1; ++i) {
 		rasterizeTriangle(camera, vertices[0].position, vertices[i].position, vertices[i + 1].position);
 	}
@@ -368,11 +347,11 @@ void FrameBuffer::rasterizePolygon(Camera* camera, const std::vector<Vertex>& ve
 	for (int i = 0; i < vertices.size(); ++i) {
 		int next = (i + 1) % vertices.size();
 
-		Draw3DStroke(camera, vertices[i].position, vertices[next].position);
+		Draw3DStroke(camera, vertices[i].position, vertices[next].position, seed);
 	}
 }
 
-void FrameBuffer::rasterizeConcavePolygon(Camera* camera, const std::vector<Vertex>& vertices) {
+void FrameBuffer::rasterizeConcavePolygon(Camera* camera, const std::vector<Vertex>& vertices, int seed) {
 	Polygon_2 polygon;
 	glm::vec3 prev_pp;
 	glm::vec3 first_pp;
@@ -420,7 +399,7 @@ void FrameBuffer::rasterizeConcavePolygon(Camera* camera, const std::vector<Vert
 	for (int i = 0; i < vertices.size(); ++i) {
 		int next = (i + 1) % vertices.size();
 
-		Draw3DStroke(camera, vertices[i].position, vertices[next].position);
+		Draw3DStroke(camera, vertices[i].position, vertices[next].position, seed);
 	}
 }
 
